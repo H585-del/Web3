@@ -1,42 +1,38 @@
 from web3 import Web3
-import json
+from Deploy import deploy_contract
 import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
-# Connect to local provider
-w3 = Web3(Web3.HTTPProvider(os.getenv("LOCAL_PROVIDER")))
-
-# Set up the account
+contract_file = "./src/newContract.sol"
+contract_name= 'newContract'
 account = os.getenv("ANVIL_ACCOUNT")
+private_key = os.getenv("ANVIL_PRIVATE_KEY")
+provider = os.getenv("LOCAL_PROVIDER")
+chain_id = 31337
 
-# Address of the deployed contract (replace with the actual address after deploying)
-contract_address = "0x663F3ad617193148711d28f5334eE4Ed07016602"  # Update this after deploying
+connection = Web3(Web3.HTTPProvider(provider))
 
-# Load contract ABI
-with open("compiled_contract.json") as json_file:
-    compiled_contract = json.load(json_file)
+contract_address, abi = deploy_contract(contract_file,"newContract",account,private_key,provider,chain_id)
+print(f"Contract deployed at {contract_address}")
 
-contract_id = list(compiled_contract['contracts']['Contract.sol'].keys())[0]
-contract_abi = compiled_contract['contracts']['Contract.sol'][contract_id]['abi']
+simple_storage = connection.eth.contract(address=contract_address, abi=abi)
+nonce = connection.eth.get_transaction_count(account)
 
-# Create contract instance
-new_contract = w3.eth.contract(address=contract_address, abi=contract_abi)
+print("Creating Transactions")
+transaction = simple_storage.functions.updateID(5341).build_transaction(
+    {
+        "chainId": chain_id,
+        "gasPrice": connection.eth.gas_price,
+        "from": account,
+        "nonce": nonce
 
-# Update ID
-update_tx = new_contract.functions.updateID(5341).build_transaction({
-    'from': account,
-    'nonce': w3.eth.get_transaction_count(account),
-    'chainId': 31337,
-})
+    }
+)
+signed_txn = connection.eth.account.sign_transaction(transaction, private_key=private_key)
 
-# Sign and send the transaction
-signed_update_tx = w3.eth.account.sign_transaction(update_tx, private_key=os.getenv("ANVIL_PRIVATE_KEY"))
-update_tx_hash = w3.eth.send_raw_transaction(signed_update_tx.raw_transaction)
-w3.eth.wait_for_transaction_receipt(update_tx_hash)
+print("Updating stored Value")
+tx_hash = connection.eth.send_raw_transaction(signed_txn.raw_transaction)
 
-# Call viewMyId to get the updated StudentId
-student_id = new_contract.functions.viewMyId().call()
-print(f"Updated value is: {student_id}")
+tx_receipt = connection.eth.wait_for_transaction_receipt(tx_hash)
+print("updated")
+updated_value = simple_storage.functions.viewMyId().call()
+print(f"Updated value is {updated_value}")
